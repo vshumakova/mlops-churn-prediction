@@ -6,7 +6,6 @@ COPY api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY api/ ./api/
-COPY models/ ./models/
 
 EXPOSE 10000
 
