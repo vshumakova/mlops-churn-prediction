@@ -1,47 +1,71 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import numpy as np
 import joblib
-import mlflow
-from typing import List, Dict
 import os
+import logging
+from typing import List, Dict
+from datetime import datetime
 
-app = FastAPI(title="Churn Prediction API", version="1.0")
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="Churn Prediction API",
+    description="ML Model for customer churn prediction",
+    version="1.0.0"
+)
 
 # Global variables
 model = None
-model_version = "v1.0"
+model_version = os.getenv("MODEL_VERSION", "1.0.0")
+model_path = os.getenv("MODEL_PATH", "/app/models/model.pkl")
 
 class PredictionRequest(BaseModel):
-    features: List[float]
-    user_id: str
+    features: List[float] = Field(..., description="List of feature values")
+    customer_id: str = Field(..., description="Customer identifier")
 
 class PredictionResponse(BaseModel):
-    user_id: str
+    customer_id: str
     churn_probability: float
     prediction: int
+    risk_level: str
+    recommendation: str
     model_version: str
+    timestamp: str
+
+class HealthResponse(BaseModel):
+    status: str
+    model_loaded: bool
+    model_version: str
+    service: str
+    timestamp: str
 
 @app.on_event("startup")
 async def load_model():
-    """Loading the model"""
+    """Load model at startup"""
     global model
-    try:
-        model = joblib.load('model.pkl') if os.path.exists('model.pkl') else None
-        print("Model loaded successfully")
-    except Exception as e:
-        print(f"Could not load model: {e}")
-        model = None
+    if os.path.exists(model_path):
+        try:
+            model = joblib.load(model_path)
+            logger.info(f"Model loaded from {model_path}")
+        except Exception as e:
+            logger.error(f"Failed to load model: {e}")
+            model = None
+    else:
+        logger.warning(f"Model not found at {model_path}")
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Healthcheck endpoint для Docker"""
-    return {
-        "status": "healthy",
-        "model_loaded": model is not None,
-        "model_version": model_version,
-        "service": "churn-prediction-api"
-    }
+    """Health check endpoint"""
+    return HealthResponse(
+        status="healthy",
+        model_loaded=model is not None,
+        model_version=model_version,
+        service="churn-prediction-api",
+        timestamp=datetime.now().isoformat()
+    )
 
 @app.get("/ready")
 async def readiness_check():
@@ -52,30 +76,58 @@ async def readiness_check():
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(request: PredictionRequest):
-    """Churn prediction"""
+    """Predict churn probability for a customer"""
     if model is None:
         raise HTTPException(status_code=503, detail="Model not available")
     
-    features = np.array(request.features).reshape(1, -1)
-    probability = model.predict_proba(features)[0][1]
-    prediction = 1 if probability > 0.5 else 0
-    
-    return PredictionResponse(
-        user_id=request.user_id,
-        churn_probability=float(probability),
-        prediction=prediction,
-        model_version=model_version
-    )
+    try:
+        features = np.array(request.features).reshape(1, -1)
+        probability = float(model.predict_proba(features)[0][1])
+        prediction = 1 if probability > 0.5 else 0
+        
+        # Determine risk level and recommendation
+        if probability < 0.3:
+            risk_level = "Low"
+            recommendation = "Monitor only, no action needed"
+        elif probability < 0.6:
+            risk_level = "Medium"
+            recommendation = "Send personalized email offer"
+        elif probability < 0.8:
+            risk_level = "High"
+            recommendation = "Call customer + discount offer"
+        else:
+            risk_level = "Critical"
+            recommendation = "Urgent: Manager call + premium retention offer"
+        
+        return PredictionResponse(
+            customer_id=request.customer_id,
+            churn_probability=probability,
+            prediction=prediction,
+            risk_level=risk_level,
+            recommendation=recommendation,
+            model_version=model_version,
+            timestamp=datetime.now().isoformat()
+        )
+    except Exception as e:
+        logger.error(f"Prediction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/metrics")
 async def get_metrics():
-    """Metrics for monitoring"""
+    """Get model metrics"""
     return {
-        "model_version": model_version,
         "model_loaded": model is not None,
-        "endpoints": ["/health", "/ready", "/predict", "/metrics"]
+        "model_version": model_version,
+        "endpoints": ["/health", "/ready", "/predict", "/metrics"],
+        "features_count": 5  # Update based on your model
     }
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "Churn Prediction API",
+        "docs": "/docs",
+        "health": "/health",
+        "predict": "/predict"
+    }
