@@ -1,16 +1,17 @@
 version: '3.8'
 
 services:
-  # API сервис
   api:
     build: ./api
     ports:
       - "8000:8000"
     depends_on:
       - mlflow
-      - feast
     environment:
       - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MODEL_PATH=/app/model.pkl
+    volumes:
+      - ./models:/app/models
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -19,8 +20,8 @@ services:
       start_period: 40s
     networks:
       - mlops-network
+    restart: unless-stopped
 
-  # MLflow для экспериментов
   mlflow:
     image: bitnami/mlflow:latest
     ports:
@@ -31,33 +32,19 @@ services:
       - ./mlflow:/mlflow
     networks:
       - mlops-network
+    restart: unless-stopped
 
-  # PostgreSQL для Feature Store
   postgres:
     image: postgres:15
     environment:
-      - POSTGRES_DB=feast
-      - POSTGRES_USER=feast
-      - POSTGRES_PASSWORD=feast123
+      - POSTGRES_DB=mlops
+      - POSTGRES_USER=mlops_user
+      - POSTGRES_PASSWORD=mlops_pass
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - mlops-network
-
-  # Feature Store (Feast)
-  feast:
-    build:
-      context: ./feature_store
-    depends_on:
-      - postgres
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=feast
-      - DB_PASSWORD=feast123
-      - DB_NAME=feast
-    networks:
-      - mlops-network
+    restart: unless-stopped
 
 networks:
   mlops-network:
