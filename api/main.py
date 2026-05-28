@@ -31,17 +31,20 @@ class PredictionResponse(BaseModel):
 @app.on_event("startup")
 async def load_model():
     global model
-    # Пробуем разные пути
-    paths = ['api/model.pkl', 'model.pkl', 'models/model.pkl']
+    paths = [
+        'api/models/model.pkl',
+        'models/model.pkl',
+        'model.pkl'
+    ]
     for path in paths:
         if os.path.exists(path):
             try:
                 model = joblib.load(path)
-                logger.info(f"✅ Model loaded from {path}")
+                logger.info(f"Model loaded from {path}")
                 return
             except Exception as e:
                 logger.error(f"Failed: {e}")
-    logger.warning("⚠️ Model not found")
+    logger.warning("Model not found")
 
 @app.get("/health")
 async def health_check():
