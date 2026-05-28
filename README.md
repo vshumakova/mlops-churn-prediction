@@ -38,3 +38,24 @@ docker-compose exec api python src/train.py
 
 # Test API
 curl http://localhost:8000/health
+```
+```bash
+API Endpoints
+Endpoint	Method	Description
+/health	GET	Health check
+/predict	POST	Predict churn probability
+/metrics	GET	Model metrics
+
+Project Structure
+text
+├── api/           # FastAPI application
+├── src/           # Training & prediction scripts
+├── tests/         # Unit tests
+├── dags/          # Airflow DAGs
+├── monitoring/    # Drift detection
+├── configs/       # Configuration files
+└── docs/          # Documentation & ADRs
+```
+
+
+
