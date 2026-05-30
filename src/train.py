@@ -39,7 +39,9 @@ metrics = {
     'accuracy': accuracy_score(y_test, y_pred),
     'precision': precision_score(y_test, y_pred),
     'recall': recall_score(y_test, y_pred),
-    'f1': f1_score(y_test, y_pred)
+    'f1': f1_score(y_test, y_pred),
+    'roc_auc': float(roc_auc_score(y_test, y_pred_proba),
+    'timestamp': datetime.now().isoformat()
 }
 print(f"Metrics: {metrics}")
 
@@ -63,7 +65,6 @@ print("Metrics saved to metrics/latest_metrics.json")
 with open('METRICS.md', 'w') as f:
     f.write("# Model Performance Metrics\n\n")
     f.write("| Metric | Value |\n")
-    f.write("|--------|-------|\n")
     f.write(f"| Accuracy | {metrics['accuracy']:.4f} |\n")
     f.write(f"| Precision | {metrics['precision']:.4f} |\n")
     f.write(f"| Recall | {metrics['recall']:.4f} |\n")
