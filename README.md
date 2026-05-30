@@ -58,13 +58,11 @@ curl http://localhost:8000/health
 ```
 
 ### API Endpoints
-
-Endpoint	Method	Description
-/health	GET	Service health check
-/ready	GET	Readiness probe
-/predict	POST	Predict churn probability
-/metrics	GET	Model metrics
-/docs	GET	Swagger UI documentation
+- /health	- GET	(Service health check)
+- /ready - GET	(Readiness probe)
+- /predict - POST	(Predict churn probability)
+- /metrics - GET	(Model metrics)
+- /docs - GET	(Swagger UI documentation)
 
 ### Predict Example
 
@@ -79,28 +77,82 @@ curl -X POST https://mlops-churn-prediction-2.onrender.com/predict \
 ### Project Structure
 ```bash
 mlops-churn-prediction/
-├── api/
-│   ├── main.py              # FastAPI application
-│   ├── requirements.txt     # API dependencies
-│   └── models/              # Trained models (.pkl)
-│       └── model.pkl
-├── src/
-│   ├── __init__.py 
-│   ├── train.py             # Model training script
-│   └── prepare_data.py      # Data preparation
-├── tests/
-│   └── test_api.py          # API unit tests
-├── data/
-│   └── raw/                 # Raw data files
-│       └── bank_clients.csv
-├── metrics/                 # Performance metrics (JSON)
-├── docs/
-│   └── adr/                 # Architecture Decision Records
 ├── .github/workflows/
-│   └── retrain.yml          # Auto-retrain CI/CD
-├── docker-compose.yml       # Infrastructure as Code
-├── MANIFEST.md              # ML System Manifest
-├── METRICS.md               # Model performance dashboard
-└── README.md                # This file
+│   └── retrain.yml          # CI/CD
+├── api/
+│   ├── main.py              # API
+│   └── requirements.txt     # API dependencies
+├── data/raw/
+│   └── bank_clients.csv     # Data
+├── docs/
+│   ├── adr/
+│   │   └── 001-ml-pipeline.md  # ADR
+│   └── sli-slo.md           # SLI/SLO
+├── src/
+│   ├── prepare_data.py      # Data preparation
+│   └── train.py             # Trainig
+├── tests/
+│   └── test_api.py          # Tests
+├── models/                  # Folder for models
+├── metrics/                 # Folder for metrics
+├── .gitignore               
+├── MANIFEST.md              # Manifest
+├── README.md                
+├── requirements.txt         
+└── runtime.txt              # Fixing Python 3.10
 ```
 
+### CI/CD Pipeline
+```bash
+Schedule: Weekly (Sunday at 00:00 UTC)
+Trigger: Manual or scheduled
+Steps:
+  1. Checkout code
+  2. Setup Python 3.10
+  3. Install dependencies
+  4. Train model on real bank data
+  5. Run API tests
+  6. Deploy to Render (if tests pass)
+```
+
+### Feature Engineering
+1. CreditScore - Credit rating (350-850)
+2. Age_log - Logarithm of age
+3. Tenure - Years with the bank
+4. Balance_log - Logarithm of account balance
+5. NumOfProducts - Number of bank products
+6. HasCrCard - Credit card ownership (0/1)
+7. IsActiveMember - Active customer status (0/1)
+8. Salary_log - Logarithm of estimated salary
+9. Gender - 0=Male, 1=Female
+10. BalanceSalaryRatio - Balance / Salary
+11. TenureByAge - Tenure / Age
+12. CreditScoreGivenAge - CreditScore / Age
+
+### Testing
+```bash
+# Run unit tests
+pytest tests/test_api.py -v
+```
+
+### Live Demo
+
+The API is deployed and available 24/7:
+- Health Check: https://mlops-churn-prediction-2.onrender.com/health
+- API Documentation: https://mlops-churn-prediction-2.onrender.com/docs
+- Predict Endpoint: https://mlops-churn-prediction-2.onrender.com/predict
+
+### Technologies
+- Python 3.10 - Core language
+- FastAPI - REST API framework
+- Scikit-learn - ML algorithms
+- Pandas/NumPy - Data processing
+- Joblib - Model serialization
+- Docker - Containerization
+- GitHub Actions - CI/CD
+- Render - Cloud hosting
+
+### Links
+- GitHub Repository: https://github.com/vshumakova/mlops-churn-prediction
+- Live API: https://mlops-churn-prediction-2.onrender.com/health
+- API Docs: https://mlops-churn-prediction-2.onrender.com/docs
