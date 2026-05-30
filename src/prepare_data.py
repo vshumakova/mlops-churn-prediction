@@ -60,7 +60,6 @@ def prepare_data(csv_path='data/raw/churn_data.csv'):
 if __name__ == "__main__":
     X, y = prepare_data()
     
-    # Сохраняем подготовленные данные
     X.to_parquet('data/processed/X_features.parquet')
     y.to_parquet('data/processed/y_target.parquet')
     print("\nДанные сохранены в data/processed/")
