@@ -63,4 +63,4 @@ if __name__ == "__main__":
     # Сохраняем подготовленные данные
     X.to_parquet('data/processed/X_features.parquet')
     y.to_parquet('data/processed/y_target.parquet')
-    print("\n💾 Данные сохранены в data/processed/")
+    print("\nДанные сохранены в data/processed/")
