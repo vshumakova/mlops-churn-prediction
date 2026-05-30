@@ -40,7 +40,7 @@ metrics = {
     'precision': precision_score(y_test, y_pred),
     'recall': recall_score(y_test, y_pred),
     'f1': f1_score(y_test, y_pred),
-    'roc_auc': float(roc_auc_score(y_test, y_pred_proba),
+    'roc_auc': float(roc_auc_score(y_test, y_pred_proba)),
     'timestamp': datetime.now().isoformat()
 }
 print(f"Metrics: {metrics}")
