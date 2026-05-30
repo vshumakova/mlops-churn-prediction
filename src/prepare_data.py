@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 import joblib
 
-def prepare_data(csv_path='data/raw/churn_data.csv'):
+def prepare_data(csv_path='data/raw/bank_clients.csv'):
     """Loading and preparing data from bank_clients.csv"""
     df = pd.read_csv(csv_path)
     
