@@ -67,12 +67,14 @@ curl http://localhost:8000/health
 ### Predict Example
 
 Request:
+```bash
 curl -X POST https://mlops-churn-prediction-2.onrender.com/predict \
   -H "Content-Type: application/json" \
   -d '{
     "features": [720, 3.496, 5, 10.82, 2, 1, 1, 11.69, 0, 0.416, 0.1515, 21.82],
     "customer_id": "active_client"
   }'
+```
 
 ### Project Structure
 ```bash
