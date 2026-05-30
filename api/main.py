@@ -16,8 +16,8 @@ model = None
 model_version = "1.0.0"
 
 class PredictionRequest(BaseModel):
-    features: List[float]
-    customer_id: str
+    features: List[float] = Field(..., description="List of 12 feature values")
+    customer_id: str = Field(..., description="Customer identifier")
 
 class PredictionResponse(BaseModel):
     customer_id: str
@@ -32,8 +32,8 @@ class PredictionResponse(BaseModel):
 async def load_model():
     global model
     paths = [
-        'api/models/model.pkl',
         'models/model.pkl',
+        'api/models/model.pkl',
         'model.pkl'
     ]
     for path in paths:
@@ -43,8 +43,8 @@ async def load_model():
                 logger.info(f"Model loaded from {path}")
                 return
             except Exception as e:
-                logger.error(f"Failed: {e}")
-    logger.warning("Model not found")
+                logger.error(f"Failed to load from {path}: {e}")
+    logger.warning("⚠️ Model not found in any location")
 
 @app.get("/health")
 async def health_check():
@@ -56,38 +56,69 @@ async def health_check():
         "timestamp": datetime.now().isoformat()
     }
 
+@app.get("/ready")
+async def readiness_check():
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    return {"status": "ready"}
+
 @app.post("/predict")
 async def predict(request: PredictionRequest):
     if model is None:
         raise HTTPException(status_code=503, detail="Model not available")
     
-    features = np.array(request.features).reshape(1, -1)
-    probability = float(model.predict_proba(features)[0][1])
-    prediction = 1 if probability > 0.5 else 0
+    # ПРОВЕРКА КОЛИЧЕСТВА ПРИЗНАКОВ
+    if len(request.features) != 12:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Expected 12 features, got {len(request.features)}"
+        )
     
-    if probability < 0.3:
-        risk_level = "Low"
-        recommendation = "Monitor only"
-    elif probability < 0.6:
-        risk_level = "Medium"
-        recommendation = "Send email offer"
-    elif probability < 0.8:
-        risk_level = "High"
-        recommendation = "Call customer"
-    else:
-        risk_level = "Critical"
-        recommendation = "Urgent manager call"
-    
-    return PredictionResponse(
-        customer_id=request.customer_id,
-        churn_probability=probability,
-        prediction=prediction,
-        risk_level=risk_level,
-        recommendation=recommendation,
-        model_version=model_version,
-        timestamp=datetime.now().isoformat()
-    )
+    try:
+        features = np.array(request.features).reshape(1, -1)
+        probability = float(model.predict_proba(features)[0][1])
+        prediction = 1 if probability > 0.5 else 0
+        
+        if probability < 0.3:
+            risk_level = "Low"
+            recommendation = "Monitor only, no action needed"
+        elif probability < 0.6:
+            risk_level = "Medium"
+            recommendation = "Send personalized email offer"
+        elif probability < 0.8:
+            risk_level = "High"
+            recommendation = "Call customer + discount offer"
+        else:
+            risk_level = "Critical"
+            recommendation = "Urgent: Manager call + premium retention offer"
+        
+        return PredictionResponse(
+            customer_id=request.customer_id,
+            churn_probability=probability,
+            prediction=prediction,
+            risk_level=risk_level,
+            recommendation=recommendation,
+            model_version=model_version,
+            timestamp=datetime.now().isoformat()
+        )
+    except Exception as e:
+        logger.error(f"Prediction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/metrics")
+async def get_metrics():
+    return {
+        "model_loaded": model is not None,
+        "model_version": model_version,
+        "endpoints": ["/health", "/ready", "/predict", "/metrics"],
+        "features_count": 12
+    }
 
 @app.get("/")
 async def root():
-    return {"message": "Churn Prediction API", "health": "/health", "predict": "/predict"}
+    return {
+        "message": "Churn Prediction API",
+        "docs": "/docs",
+        "health": "/health",
+        "predict": "/predict"
+    }
