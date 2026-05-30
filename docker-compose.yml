@@ -2,53 +2,17 @@ version: '3.8'
 
 services:
   api:
-    build: ./api
+    build: .
     ports:
       - "8000:8000"
-    depends_on:
-      - mlflow
-    environment:
-      - MLFLOW_TRACKING_URI=http://mlflow:5000
-      - MODEL_PATH=/app/model.pkl
     volumes:
       - ./models:/app/models
+    environment:
+      - MODEL_PATH=/app/models/model.pkl
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    networks:
-      - mlops-network
     restart: unless-stopped
-
-  mlflow:
-    image: bitnami/mlflow:latest
-    ports:
-      - "5000:5000"
-    environment:
-      - MLFLOW_TRACKING_URI=http://mlflow:5000
-    volumes:
-      - ./mlflow:/mlflow
-    networks:
-      - mlops-network
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:15
-    environment:
-      - POSTGRES_DB=mlops
-      - POSTGRES_USER=mlops_user
-      - POSTGRES_PASSWORD=mlops_pass
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - mlops-network
-    restart: unless-stopped
-
-networks:
-  mlops-network:
-    driver: bridge
-
-volumes:
-  postgres_data:
