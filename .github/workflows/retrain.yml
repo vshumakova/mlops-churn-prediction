@@ -27,6 +27,15 @@ jobs:
       - name: Train model
         run: python src/train.py
       
+      - name: Check quality gate
+        run: |
+          ROC_AUC=$(python -c "import json; print(json.load(open('metrics/latest_metrics.json'))['roc_auc'])")
+          if (( $(echo "$ROC_AUC < 0.75" | bc -l) )); then
+            echo " Quality gate failed. ROC-AUC: $ROC_AUC (need >= 0.75)"
+            exit 1
+          fi
+          echo "Quality gate passed. ROC-AUC: $ROC_AUC"
+      
       - name: Run tests
         run: pytest tests/test_api.py -v
       
@@ -36,7 +45,7 @@ jobs:
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: "Auto-retrain model [skip ci]"
+          commit_message: "🤖 Auto-retrain model [skip ci]"
           commit_user_name: "ML Bot"
           commit_user_email: "ml-bot@github.com"
           add_options: '-A'
