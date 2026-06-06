@@ -44,7 +44,7 @@ async def load_model():
                 return
             except Exception as e:
                 logger.error(f"Failed to load from {path}: {e}")
-    logger.warning("⚠️ Model not found in any location")
+    logger.warning("Model not found in any location")
 
 @app.get("/health")
 async def health_check():
