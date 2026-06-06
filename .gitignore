@@ -1,45 +1,23 @@
 # Python
 __pycache__/
-*.py[cod]
-*.so
-.Python
-env/
-venv/
+*.pyc
 .env
-.venv
+venv/
+.venv/
 
-# ML artifacts
+# ML модели и данные
 *.pkl
 *.joblib
-mlruns/
-mlflow.db
-feature_store/
-
-# Data
 *.csv
 *.parquet
-data/raw/*.csv
-data/processed/*.parquet
 
 # IDE
 .vscode/
 .idea/
-*.swp
 .DS_Store
 
-# Docker
+# Логи
 *.log
-
-# OS
-.DS_Store
-
-# Coverage
-.coverage
-htmlcov/
 
 # Jupyter
 .ipynb_checkpoints/
-*.ipynb
-
-# Codespaces
-.codespace/
