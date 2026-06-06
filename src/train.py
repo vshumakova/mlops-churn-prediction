@@ -45,13 +45,6 @@ metrics = {
 }
 print(f"Metrics: {metrics}")
 
-# with mlflow.start_run():
-#     mlflow.log_params(model.get_params())
-#     mlflow.log_metrics(metrics)
-#     mlflow.sklearn.log_model(model, "churn_model")
-#     mlflow.log_param("features", available_features)
-#     print("\nLogged to MLflow")
-
 # Saving model
 joblib.dump(model, 'models/model.pkl')
 print("Model saved")
