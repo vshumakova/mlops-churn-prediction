@@ -1,14 +1,12 @@
-version: '3.8'
-
 services:
   api:
     build: .
     ports:
       - "8000:8000"
     volumes:
-      - ./models:/app/models
+      - ./api/models:/app/api/models
     environment:
-      - MODEL_PATH=/app/models/model.pkl
+      - MODEL_PATH=/app/api/models/model.pkl
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
