@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY api/ ./api/
 
-COPY models/ ./models/ 2>/dev/null || true
+COPY api/models/ ./models/ 2>/dev/null || true
 
 EXPOSE 8000
 
