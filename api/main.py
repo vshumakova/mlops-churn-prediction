@@ -56,7 +56,6 @@ async def lifespan(app: FastAPI):
     
     # Shutdown: очищаем ресурсы
     logger.info("Shutting down...")
-    global model
     model = None
 
 # Создаем приложение с lifespan
