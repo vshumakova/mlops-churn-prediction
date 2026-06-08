@@ -2,8 +2,8 @@ name: Auto Retrain Model
 
 on:
   schedule:
-    - cron: '0 0 * * 0'
-  workflow_dispatch:
+    - cron: '0 0 * * 0'  # Run every Sunday at midnight
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
   retrain:
@@ -22,7 +22,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r api/requirements.txt
-          pip install pytest
+          pip install pytest pytest-cov
       
       - name: Train model
         run: python src/train.py
@@ -31,21 +31,21 @@ jobs:
         run: |
           ROC_AUC=$(python -c "import json; print(json.load(open('metrics/latest_metrics.json'))['roc_auc'])")
           if (( $(echo "$ROC_AUC < 0.75" | bc -l) )); then
-            echo " Quality gate failed. ROC-AUC: $ROC_AUC (need >= 0.75)"
+            echo "❌ Quality gate failed. ROC-AUC: $ROC_AUC (need >= 0.75)"
             exit 1
           fi
-          echo "Quality gate passed. ROC-AUC: $ROC_AUC"
+          echo "✅ Quality gate passed. ROC-AUC: $ROC_AUC"
       
       - name: Run tests
-        run: pytest tests/test_api.py -v
+        run: pytest tests/test_api.py -v --tb=short
       
       - name: Copy model to API folder
-        run: cp models/model.pkl api/
+        run: cp models/model.pkl api/models/
       
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: "Auto-retrain model [skip ci]"
+          commit_message: "🤖 Auto-retrain model [skip ci]"
           commit_user_name: "ML Bot"
           commit_user_email: "ml-bot@github.com"
           add_options: '-A'
