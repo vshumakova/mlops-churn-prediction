@@ -180,6 +180,8 @@ def test_predict_batch():
 
 
 # ============= VALIDATION TESTS =============
+# ВАЖНО: Эти тесты всегда ожидают 422, потому что Pydantic валидация
+# происходит ДО проверки загрузки модели
 
 def test_predict_invalid_features_count():
     """Test with wrong number of features"""
@@ -188,13 +190,8 @@ def test_predict_invalid_features_count():
         "customer_id": "invalid_001"
     }
     response = client.post("/predict", json=payload)
-    
-    # Если модель не загружена, API возвращает 503
-    # Если модель загружена, валидация вернет 422
-    if is_model_loaded():
-        assert response.status_code == 422
-    else:
-        assert response.status_code == 503
+    # Pydantic validation returns 422 regardless of model being loaded
+    assert response.status_code == 422
 
 
 def test_predict_missing_customer_id():
@@ -203,11 +200,8 @@ def test_predict_missing_customer_id():
         "features": [0.5] * 12
     }
     response = client.post("/predict", json=payload)
-    
-    if is_model_loaded():
-        assert response.status_code == 422
-    else:
-        assert response.status_code == 503
+    # Missing required field - 422 validation error
+    assert response.status_code == 422
 
 
 def test_predict_invalid_feature_type():
@@ -217,21 +211,15 @@ def test_predict_invalid_feature_type():
         "customer_id": "invalid_002"
     }
     response = client.post("/predict", json=payload)
-    
-    if is_model_loaded():
-        assert response.status_code == 422
-    else:
-        assert response.status_code == 503
+    # Wrong type - 422 validation error
+    assert response.status_code == 422
 
 
 def test_predict_empty_request():
     """Test with empty request body"""
     response = client.post("/predict", json={})
-    
-    if is_model_loaded():
-        assert response.status_code == 422
-    else:
-        assert response.status_code == 503
+    # Empty body missing required fields - 422 validation error
+    assert response.status_code == 422
 
 
 def test_predict_extra_fields():
@@ -245,6 +233,7 @@ def test_predict_extra_fields():
         "extra_field": "should_be_ignored"
     }
     response = client.post("/predict", json=payload)
+    # Extra fields should be ignored, not cause validation error
     assert response.status_code == 200
 
 
@@ -335,11 +324,11 @@ def test_ready_endpoint():
     """Test readiness endpoint"""
     response = client.get("/ready")
     
-    # Если эндпоинт не существует, пропускаем тест
     if response.status_code == 404:
         pytest.skip("/ready endpoint not implemented")
     
-    # Если модель не загружена, может быть 503
+    # Ready endpoint should return 200 when service is ready
+    # May return 503 if model not loaded
     if response.status_code == 503:
         assert not is_model_loaded()
     else:
@@ -352,14 +341,12 @@ def test_ready_endpoint():
 
 def test_cors_headers():
     """Test CORS headers are present"""
-    # OPTIONS запрос должен возвращать CORS headers
     response = client.options("/predict")
     
-    # Если CORS не настроен, OPTORS может вернуть 405
     if response.status_code == 405:
-        pytest.skip("CORS not configured or OPTIONS not supported")
+        pytest.skip("OPTIONS method not supported or CORS not configured")
     
-    # Проверяем наличие CORS headers
+    # Check for CORS headers
     assert "access-control-allow-origin" in response.headers
     assert "access-control-allow-methods" in response.headers
     assert "access-control-allow-headers" in response.headers
@@ -373,12 +360,11 @@ def test_model_info_when_loaded():
     assert response.status_code == 200
     data = response.json()
     
+    # Model version should always be present
+    assert data["model_version"] == "1.0.0"
+    
     if data["model_loaded"]:
-        assert data["model_version"] == "1.0.0"
         assert "timestamp" in data
-    else:
-        # Если модель не загружена, это тоже допустимо
-        assert data["model_version"] == "1.0.0"  # Version should still be present
 
 
 if __name__ == "__main__":
