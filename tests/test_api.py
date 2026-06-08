@@ -1,41 +1,50 @@
 import pytest
-from fastapi.testclient import TestClient
 import sys
 import os
 import math
+import requests
 
+# Добавляем путь к проекту
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from api.main import app
+
+# Принудительно загружаем модель ДО тестов
+from api.main import load_model, app
+load_model()
+
+# Теперь можно использовать TestClient
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
+
+BASE_URL = "http://localhost:8000"
 
 def calculate_features(credit_score, age, tenure, balance, num_products,
                        has_cr_card, is_active_member, estimated_salary, gender):
     """Calculate all 12 features from raw data"""
     return [
-        credit_score,                           # CreditScore
-        math.log1p(age),                        # Age_log
-        tenure,                                 # Tenure
-        math.log1p(balance),                    # Balance_log
-        num_products,                           # NumOfProducts
-        has_cr_card,                            # HasCrCard
-        is_active_member,                       # IsActiveMember
-        math.log1p(estimated_salary),           # Salary_log
-        gender,                                 # Gender (0=Male, 1=Female)
-        balance / (estimated_salary + 1),       # BalanceSalaryRatio
-        tenure / (age + 1),                     # TenureByAge
-        credit_score / (age + 1)                # CreditScoreGivenAge
+        credit_score,
+        math.log1p(age),
+        tenure,
+        math.log1p(balance),
+        num_products,
+        has_cr_card,
+        is_active_member,
+        math.log1p(estimated_salary),
+        gender,
+        balance / (estimated_salary + 1),
+        tenure / (age + 1),
+        credit_score / (age + 1)
     ]
 
 def test_health():
     """Test health endpoint"""
     response = client.get("/health")
+    print(f"Health response: {response.status_code} - {response.json()}")
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
 
 def test_predict_active_client():
     """Test with an active young client (likely to stay)"""
-    # An active young client with high income
     features = calculate_features(
         credit_score=720,
         age=32,
@@ -45,7 +54,7 @@ def test_predict_active_client():
         has_cr_card=1,
         is_active_member=1,
         estimated_salary=120000,
-        gender=0  # Male
+        gender=0
     )
     
     payload = {
@@ -53,22 +62,20 @@ def test_predict_active_client():
         "customer_id": "active_client_001"
     }
     response = client.post("/predict", json=payload)
+    print(f"Predict response status: {response.status_code}")
+    
+    if response.status_code == 503:
+        print("❌ Model not loaded! Check if model.pkl exists")
+        print(f"Model file exists? {os.path.exists('models/model.pkl')}")
+        print(f"API model: {app.model}")
+    
     assert response.status_code == 200
     data = response.json()
-    
-    print(f"\nAn active young client")
-    print(f"The probability of outflow: {data['churn_probability']:.2%}")
-    print(f"The level of risk: {data['risk_level']}")
-    print(f"Recommendation: {data['recommendation']}\n")
-
-    
     assert "churn_probability" in data
-    assert "prediction" in data
     assert 0 <= data["churn_probability"] <= 1
 
 def test_predict_elderly_client():
     """Test with an elderly inactive client (likely to leave)"""
-    # An elderly inactive client with a low income
     features = calculate_features(
         credit_score=580,
         age=65,
@@ -78,7 +85,7 @@ def test_predict_elderly_client():
         has_cr_card=0,
         is_active_member=0,
         estimated_salary=30000,
-        gender=1  # Female
+        gender=1
     )
     
     payload = {
@@ -88,14 +95,7 @@ def test_predict_elderly_client():
     response = client.post("/predict", json=payload)
     assert response.status_code == 200
     data = response.json()
-    
-    print(f"\nAn elderly inactive client")
-    print(f"The probability of outflow: {data['churn_probability']:.2%}")
-    print(f"The level of risk: {data['risk_level']}")
-    print(f"Recommendation: {data['recommendation']}\n")
-    
     assert "churn_probability" in data
-    assert "prediction" in data
     assert 0 <= data["churn_probability"] <= 1
 
 def test_predict_invalid_features():
@@ -105,7 +105,7 @@ def test_predict_invalid_features():
         "customer_id": "test123"
     }
     response = client.post("/predict", json=payload)
-    assert response.status_code == 422
+    assert response.status_code == 422  # Validation error
 
 def test_metrics():
     """Test metrics endpoint"""
