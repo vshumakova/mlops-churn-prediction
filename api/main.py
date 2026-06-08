@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from contextlib import asynccontextmanager
 import numpy as np
 import joblib
 import os
@@ -10,8 +11,7 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Churn Prediction API", version="1.0.0")
-
+# Глобальная переменная для модели
 model = None
 model_version = "1.0.0"
 
@@ -28,23 +28,43 @@ class PredictionResponse(BaseModel):
     model_version: str
     timestamp: str
 
-@app.on_event("startup")
-async def load_model():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: загружаем модель
     global model
+    logger.info("Starting up...")
+    
     paths = [
         'models/model.pkl',
         'api/models/model.pkl',
         'model.pkl'
     ]
+    
     for path in paths:
         if os.path.exists(path):
             try:
                 model = joblib.load(path)
                 logger.info(f"Model loaded from {path}")
-                return
+                break
             except Exception as e:
                 logger.error(f"Failed to load from {path}: {e}")
-    logger.warning("Model not found in any location")
+    
+    if model is None:
+        logger.warning("Model not found in any location")
+    
+    yield
+    
+    # Shutdown: очищаем ресурсы
+    logger.info("Shutting down...")
+    global model
+    model = None
+
+# Создаем приложение с lifespan
+app = FastAPI(
+    title="Churn Prediction API",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 @app.get("/health")
 async def health_check():
@@ -67,7 +87,7 @@ async def predict(request: PredictionRequest):
     if model is None:
         raise HTTPException(status_code=503, detail="Model not available")
     
-    # ПРОВЕРКА КОЛИЧЕСТВА ПРИЗНАКОВ
+    # Проверка количества признаков
     if len(request.features) != 12:
         raise HTTPException(
             status_code=400, 
