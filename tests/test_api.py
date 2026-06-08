@@ -37,6 +37,7 @@ def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
+    print(f"\n Health data: {data}")  # Диагностика
     assert data["status"] == "healthy"
     assert "model_loaded" in data
     assert data["service"] == "churn-prediction-api"
@@ -64,7 +65,24 @@ def test_predict_with_valid_data():
     """Test prediction with valid data"""
     # Проверяем, загружена ли модель
     health_response = client.get("/health")
-    if not health_response.json().get("model_loaded", False):
+    model_loaded = health_response.json().get("model_loaded", False)
+    
+    print(f"\n Model loaded: {model_loaded}")
+    
+    if not model_loaded:
+        # Выводим информацию о файлах модели
+        import os
+        paths_to_check = [
+            'models/model.pkl',
+            'api/models/model.pkl',
+            'model.pkl'
+        ]
+        print(" Checking model files:")
+        for path in paths_to_check:
+            exists = os.path.exists(path)
+            size = os.path.getsize(path) if exists else 0
+            print(f"   {path}: exists={exists}, size={size} bytes")
+        
         pytest.skip("Model not loaded - test requires model file")
     
     features = calculate_features(
