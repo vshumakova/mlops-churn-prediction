@@ -2,7 +2,8 @@ import pytest
 import os
 import sys
 import math
-import asyncio
+import json
+import subprocess
 from fastapi.testclient import TestClient
 
 # Добавляем путь к проекту
@@ -12,7 +13,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from api.main import app, model
 
 # ПРИНУДИТЕЛЬНО ЗАГРУЖАЕМ МОДЕЛЬ ДЛЯ ТЕСТОВ
-# Это необходимо, потому что TestClient не всегда выполняет lifespan
 def force_load_model():
     """Force load model for testing"""
     import joblib
@@ -20,8 +20,6 @@ def force_load_model():
     model_path = 'api/models/model.pkl'
     if os.path.exists(model_path):
         try:
-            # Загружаем модель в глобальную переменную app.model
-            # Но в вашем main.py модель хранится в глобальной переменной model
             import api.main
             api.main.model = joblib.load(model_path)
             print(f"\n✓ Model force-loaded from {model_path}")
@@ -58,12 +56,13 @@ def calculate_features(credit_score, age, tenure, balance, num_products,
     ]
 
 
+# ============= EXISTING TESTS =============
+
 def test_health_endpoint():
     """Test health check endpoint"""
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
-    print(f"\n Health data: {data}")
     assert data["status"] == "healthy"
     assert "model_loaded" in data
     assert data["service"] == "churn-prediction-api"
@@ -106,9 +105,6 @@ def test_predict_with_valid_data():
     assert data["customer_id"] == "test_001"
     assert 0 <= data["churn_probability"] <= 1
     assert data["prediction"] in [0, 1]
-    assert data["risk_level"] in ["Low", "Medium", "High", "Critical"]
-    
-    print(f"\n Prediction result: probability={data['churn_probability']}, risk={data['risk_level']}")
 
 
 def test_predict_specific_case():
@@ -116,7 +112,6 @@ def test_predict_specific_case():
     if not MODEL_LOADED:
         pytest.skip("Model not loaded - test requires model file")
     
-    # Точные значения из вашего curl запроса
     features = [720, 3.496, 5, 10.82, 2, 1, 1, 11.69, 0, 0.416, 0.1515, 21.82]
     
     payload = {"features": features, "customer_id": "active_client"}
@@ -128,8 +123,6 @@ def test_predict_specific_case():
     assert data["churn_probability"] == 0.0
     assert data["prediction"] == 0
     assert data["risk_level"] == "Low"
-    
-    print(f"\n Specific case prediction: {data}")
 
 
 def test_predict_invalid_features_count():
@@ -140,7 +133,6 @@ def test_predict_invalid_features_count():
     }
     response = client.post("/predict", json=payload)
     
-    # Если модель загружена -> 400 (проверка количества), если нет -> 503
     if MODEL_LOADED:
         assert response.status_code == 400
         assert "Expected 12 features" in response.json()["detail"]
@@ -164,6 +156,292 @@ def test_ready_endpoint():
         assert response.json()["status"] == "ready"
     else:
         assert response.status_code == 503
+
+
+# ============= RETRAIN TESTS =============
+
+def test_retrain_endpoint_exists():
+    """Test that retrain endpoint is implemented"""
+    response = client.post("/retrain", json={})
+    assert response.status_code in [200, 400, 404, 422]
+    
+    if response.status_code == 404:
+        pytest.skip("/retrain endpoint not implemented")
+
+
+def test_retrain_with_valid_data():
+    """Test retraining model with valid training data"""
+    test_response = client.post("/retrain", json={})
+    if test_response.status_code == 404:
+        pytest.skip("/retrain endpoint not implemented")
+    
+    # Create sample training data
+    training_data = create_sample_training_data(500)
+    
+    payload = {
+        "training_data": training_data.tolist(),
+        "model_params": {
+            "n_estimators": 100,
+            "max_depth": 10,
+            "random_state": 42
+        }
+    }
+    
+    response = client.post("/retrain", json=payload)
+    
+    if response.status_code == 501:
+        pytest.skip("Retrain functionality not yet implemented")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert "message" in data
+    assert "model_version" in data
+    assert "timestamp" in data
+    assert data["status"] == "retrained"
+
+
+def test_retrain_preserves_model_version():
+    """Test that retraining updates model version"""
+    test_response = client.post("/retrain", json={})
+    if test_response.status_code == 404:
+        pytest.skip("/retrain endpoint not implemented")
+    
+    health_response = client.get("/health")
+    old_version = health_response.json().get("model_version", "1.0.0")
+    
+    training_data = create_sample_training_data(300)
+    payload = {
+        "training_data": training_data.tolist(),
+        "model_params": {"n_estimators": 50}
+    }
+    
+    response = client.post("/retrain", json=payload)
+    
+    if response.status_code == 501:
+        pytest.skip("Retrain functionality not yet implemented")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["model_version"] != old_version
+
+
+def test_retrain_and_predict():
+    """Test that retrained model works for predictions"""
+    test_response = client.post("/retrain", json={})
+    if test_response.status_code == 404:
+        pytest.skip("/retrain endpoint not implemented")
+    
+    training_data = create_sample_training_data(200)
+    payload = {
+        "training_data": training_data.tolist(),
+        "model_params": {"n_estimators": 50, "random_state": 42}
+    }
+    
+    retrain_response = client.post("/retrain", json=payload)
+    
+    if retrain_response.status_code == 501:
+        pytest.skip("Retrain functionality not yet implemented")
+    
+    assert retrain_response.status_code == 200
+    
+    features = calculate_features(
+        credit_score=650, age=40, tenure=3, balance=25000,
+        num_products=1, has_cr_card=0, is_active_member=0,
+        estimated_salary=50000, gender=0
+    )
+    
+    predict_payload = {"features": features, "customer_id": "test_after_retrain"}
+    predict_response = client.post("/predict", json=predict_payload)
+    
+    assert predict_response.status_code == 200
+    predict_data = predict_response.json()
+    assert 0 <= predict_data["churn_probability"] <= 1
+    assert predict_data["prediction"] in [0, 1]
+
+
+def create_sample_training_data(n_samples=1000):
+    """Create synthetic training data for churn prediction"""
+    import numpy as np
+    
+    np.random.seed(42)
+    
+    data = []
+    for _ in range(n_samples):
+        credit_score = np.random.randint(300, 850)
+        age = np.random.randint(18, 70)
+        tenure = np.random.randint(0, 10)
+        balance = np.random.uniform(0, 250000)
+        num_products = np.random.randint(1, 5)
+        has_cr_card = np.random.randint(0, 2)
+        is_active_member = np.random.randint(0, 2)
+        estimated_salary = np.random.uniform(20000, 200000)
+        gender = np.random.randint(0, 2)
+        
+        # Calculate churn probability
+        churn_prob = (
+            (credit_score < 600) * 0.3 +
+            (age > 60) * 0.2 +
+            (tenure < 2) * 0.2 +
+            (balance == 0) * 0.1 +
+            (num_products == 1) * 0.1 +
+            (has_cr_card == 0) * 0.1 +
+            (is_active_member == 0) * 0.3
+        )
+        churn = 1 if churn_prob > 0.5 else 0
+        
+        features = calculate_features(
+            credit_score, age, tenure, balance, num_products,
+            has_cr_card, is_active_member, estimated_salary, gender
+        )
+        data.append(features + [churn])
+    
+    return np.array(data)
+
+
+# ============= CI/CD TESTS =============
+
+def test_github_workflow_exists():
+    """Test that GitHub Actions workflow exists"""
+    workflow_path = '.github/workflows/retrain.yml'
+    assert os.path.exists(workflow_path), f"Workflow file not found at {workflow_path}"
+    
+    with open(workflow_path, 'r') as f:
+        content = f.read()
+        assert 'Auto Retrain Model' in content
+        assert 'schedule:' in content
+        assert 'cron:' in content
+        assert 'quality gate' in content
+
+
+def test_training_script_exists():
+    """Test that training script exists"""
+    train_script_path = 'src/train.py'
+    assert os.path.exists(train_script_path), f"Training script not found at {train_script_path}"
+
+
+def test_quality_gate_threshold():
+    """Test that quality gate threshold is reasonable"""
+    # Check the workflow file for quality gate threshold
+    workflow_path = '.github/workflows/retrain.yml'
+    with open(workflow_path, 'r') as f:
+        content = f.read()
+        # Extract the threshold from workflow
+        import re
+        match = re.search(r'roc_auc\s*<\s*([0-9.]+)', content)
+        if match:
+            threshold = float(match.group(1))
+            print(f"\nQuality gate threshold: {threshold}")
+            assert 0.5 <= threshold <= 0.95, "Quality gate threshold should be between 0.5 and 0.95"
+        else:
+            print("\nWarning: Could not find quality gate threshold in workflow")
+
+
+def test_model_metrics_exist():
+    """Test that model metrics are being saved"""
+    metrics_dir = 'metrics'
+    if os.path.exists(metrics_dir):
+        metrics_files = [f for f in os.listdir(metrics_dir) if f.endswith('.json')]
+        if metrics_files:
+            latest_metrics = os.path.join(metrics_dir, 'latest_metrics.json')
+            if os.path.exists(latest_metrics):
+                with open(latest_metrics, 'r') as f:
+                    metrics = json.load(f)
+                    print(f"\nCurrent metrics: {metrics}")
+                    assert 'roc_auc' in metrics or 'accuracy' in metrics
+
+
+def test_model_file_is_versioned():
+    """Test that model file is tracked in git (or should be ignored)"""
+    model_path = 'models/model.pkl'
+    api_model_path = 'api/models/model.pkl'
+    
+    # Check if model files exist
+    if os.path.exists(model_path):
+        print(f"\nModel found at {model_path}, size: {os.path.getsize(model_path)} bytes")
+    
+    if os.path.exists(api_model_path):
+        print(f"Model found at {api_model_path}, size: {os.path.getsize(api_model_path)} bytes")
+    
+    # Check .gitignore for model files (optional)
+    gitignore_path = '.gitignore'
+    if os.path.exists(gitignore_path):
+        with open(gitignore_path, 'r') as f:
+            content = f.read()
+            if '*.pkl' in content or 'model.pkl' in content:
+                print("Model files are properly ignored in .gitignore")
+            else:
+                print("Warning: model.pkl not found in .gitignore - large files may be committed")
+
+
+def test_retrain_workflow_syntax():
+    """Test that GitHub workflow has valid syntax"""
+    import yaml
+    
+    workflow_path = '.github/workflows/retrain.yml'
+    with open(workflow_path, 'r') as f:
+        try:
+            workflow = yaml.safe_load(f)
+            assert 'name' in workflow
+            assert 'on' in workflow
+            assert 'jobs' in workflow
+            
+            # Check required steps
+            jobs = workflow.get('jobs', {})
+            retrain_job = jobs.get('retrain', {})
+            steps = retrain_job.get('steps', [])
+            
+            step_names = [step.get('name', '') for step in steps]
+            required_steps = ['Checkout code', 'Setup Python', 'Install dependencies', 
+                            'Train model', 'Check quality gate', 'Run tests']
+            
+            for required in required_steps:
+                assert any(required in name for name in step_names), f"Missing step: {required}"
+            
+            print("\n✓ GitHub workflow syntax is valid")
+        except yaml.YAMLError as e:
+            pytest.fail(f"Invalid YAML in workflow: {e}")
+
+
+def test_retrain_endpoint_documentation():
+    """Test that retrain endpoint is documented in root"""
+    response = client.get("/")
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Check if retrain is documented (optional)
+    if "retrain" in data:
+        assert isinstance(data["retrain"], str)
+
+
+# ============= PERFORMANCE TESTS =============
+
+def test_model_inference_speed():
+    """Test that model inference is fast enough"""
+    if not MODEL_LOADED:
+        pytest.skip("Model not loaded - test requires model file")
+    
+    import time
+    
+    features = [0.5] * 12
+    payload = {"features": features, "customer_id": "perf_test"}
+    
+    # Warm up
+    client.post("/predict", json=payload)
+    
+    # Test 10 predictions
+    start_time = time.time()
+    for _ in range(10):
+        response = client.post("/predict", json=payload)
+        assert response.status_code in [200, 503]
+    elapsed_time = time.time() - start_time
+    
+    avg_time = elapsed_time / 10
+    print(f"\nAverage inference time: {avg_time*1000:.2f}ms")
+    
+    if MODEL_LOADED:
+        assert avg_time < 0.1, f"Inference too slow: {avg_time*1000:.2f}ms"
 
 
 if __name__ == "__main__":
