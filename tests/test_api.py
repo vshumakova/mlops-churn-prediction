@@ -383,23 +383,66 @@ def test_retrain_workflow_syntax():
     with open(workflow_path, 'r') as f:
         try:
             workflow = yaml.safe_load(f)
-            assert 'name' in workflow
-            assert 'on' in workflow
-            assert 'jobs' in workflow
+            
+            # Check required top-level keys
+            assert 'name' in workflow, "Missing 'name' in workflow"
+            assert 'on' in workflow, "Missing 'on' in workflow"
+            assert 'jobs' in workflow, "Missing 'jobs' in workflow"
+            
+            # Check 'on' section structure
+            on_section = workflow['on']
+            assert isinstance(on_section, dict), "'on' should be a dictionary"
+            
+            # Check schedule (optional)
+            if 'schedule' in on_section:
+                schedule = on_section['schedule']
+                assert isinstance(schedule, list), "schedule should be a list"
+                if schedule:
+                    assert 'cron' in schedule[0], "Missing cron expression"
+            
+            # Check workflow_dispatch (optional, but should be present for manual trigger)
+            if 'workflow_dispatch' in on_section:
+                print("\n✓ Manual trigger (workflow_dispatch) is enabled")
+            
+            # Check jobs structure
+            jobs = workflow['jobs']
+            assert 'retrain' in jobs, "Missing 'retrain' job"
+            
+            retrain_job = jobs['retrain']
+            assert 'runs-on' in retrain_job, "Missing runs-on"
+            assert retrain_job['runs-on'] == 'ubuntu-latest', "Expected ubuntu-latest"
+            assert 'steps' in retrain_job, "Missing steps"
             
             # Check required steps
-            jobs = workflow.get('jobs', {})
-            retrain_job = jobs.get('retrain', {})
-            steps = retrain_job.get('steps', [])
-            
+            steps = retrain_job['steps']
             step_names = [step.get('name', '') for step in steps]
-            required_steps = ['Checkout code', 'Setup Python', 'Install dependencies', 
-                            'Train model', 'Check quality gate', 'Run tests']
+            
+            required_steps = [
+                'Checkout code',
+                'Setup Python', 
+                'Install dependencies',
+                'Train model',
+                'Check quality gate',
+                'Run tests'
+            ]
             
             for required in required_steps:
                 assert any(required in name for name in step_names), f"Missing step: {required}"
             
-            print("\n✓ GitHub workflow syntax is valid")
+            # Check quality gate threshold
+            for step in steps:
+                if step.get('name') == 'Check quality gate':
+                    run_script = step.get('run', '')
+                    # Extract threshold from the script
+                    import re
+                    match = re.search(r'<\s*([0-9.]+)', run_script)
+                    if match:
+                        threshold = float(match.group(1))
+                        print(f"\n✓ Quality gate threshold: {threshold}")
+                        assert 0.5 <= threshold <= 0.95, "Threshold should be between 0.5 and 0.95"
+            
+            print("\n✅ GitHub workflow syntax is valid")
+            
         except yaml.YAMLError as e:
             pytest.fail(f"Invalid YAML in workflow: {e}")
 
