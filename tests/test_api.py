@@ -2,15 +2,41 @@ import pytest
 import os
 import sys
 import math
+import asyncio
 from fastapi.testclient import TestClient
 
 # Добавляем путь к проекту
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Импортируем приложение
-from api.main import app
+from api.main import app, model
 
-# Создаем клиент - lifespan события выполнятся автоматически
+# ПРИНУДИТЕЛЬНО ЗАГРУЖАЕМ МОДЕЛЬ ДЛЯ ТЕСТОВ
+# Это необходимо, потому что TestClient не всегда выполняет lifespan
+def force_load_model():
+    """Force load model for testing"""
+    import joblib
+    
+    model_path = 'api/models/model.pkl'
+    if os.path.exists(model_path):
+        try:
+            # Загружаем модель в глобальную переменную app.model
+            # Но в вашем main.py модель хранится в глобальной переменной model
+            import api.main
+            api.main.model = joblib.load(model_path)
+            print(f"\n✓ Model force-loaded from {model_path}")
+            return True
+        except Exception as e:
+            print(f"\n✗ Failed to force-load model: {e}")
+            return False
+    else:
+        print(f"\n✗ Model file not found at {model_path}")
+        return False
+
+# Загружаем модель перед созданием клиента
+MODEL_LOADED = force_load_model()
+
+# Создаем клиент
 client = TestClient(app)
 
 def calculate_features(credit_score, age, tenure, balance, num_products,
@@ -37,7 +63,7 @@ def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
-    print(f"\n Health data: {data}")  # Диагностика
+    print(f"\n Health data: {data}")
     assert data["status"] == "healthy"
     assert "model_loaded" in data
     assert data["service"] == "churn-prediction-api"
@@ -63,26 +89,7 @@ def test_metrics_endpoint():
 
 def test_predict_with_valid_data():
     """Test prediction with valid data"""
-    # Проверяем, загружена ли модель
-    health_response = client.get("/health")
-    model_loaded = health_response.json().get("model_loaded", False)
-    
-    print(f"\n Model loaded: {model_loaded}")
-    
-    if not model_loaded:
-        # Выводим информацию о файлах модели
-        import os
-        paths_to_check = [
-            'models/model.pkl',
-            'api/models/model.pkl',
-            'model.pkl'
-        ]
-        print(" Checking model files:")
-        for path in paths_to_check:
-            exists = os.path.exists(path)
-            size = os.path.getsize(path) if exists else 0
-            print(f"   {path}: exists={exists}, size={size} bytes")
-        
+    if not MODEL_LOADED:
         pytest.skip("Model not loaded - test requires model file")
     
     features = calculate_features(
@@ -100,6 +107,29 @@ def test_predict_with_valid_data():
     assert 0 <= data["churn_probability"] <= 1
     assert data["prediction"] in [0, 1]
     assert data["risk_level"] in ["Low", "Medium", "High", "Critical"]
+    
+    print(f"\n Prediction result: probability={data['churn_probability']}, risk={data['risk_level']}")
+
+
+def test_predict_specific_case():
+    """Test the specific case that worked in curl"""
+    if not MODEL_LOADED:
+        pytest.skip("Model not loaded - test requires model file")
+    
+    # Точные значения из вашего curl запроса
+    features = [720, 3.496, 5, 10.82, 2, 1, 1, 11.69, 0, 0.416, 0.1515, 21.82]
+    
+    payload = {"features": features, "customer_id": "active_client"}
+    response = client.post("/predict", json=payload)
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["customer_id"] == "active_client"
+    assert data["churn_probability"] == 0.0
+    assert data["prediction"] == 0
+    assert data["risk_level"] == "Low"
+    
+    print(f"\n Specific case prediction: {data}")
 
 
 def test_predict_invalid_features_count():
@@ -110,10 +140,10 @@ def test_predict_invalid_features_count():
     }
     response = client.post("/predict", json=payload)
     
-    # Если модель не загружена -> 503, если загружена -> 400
-    health_response = client.get("/health")
-    if health_response.json().get("model_loaded", False):
+    # Если модель загружена -> 400 (проверка количества), если нет -> 503
+    if MODEL_LOADED:
         assert response.status_code == 400
+        assert "Expected 12 features" in response.json()["detail"]
     else:
         assert response.status_code == 503
 
@@ -128,9 +158,8 @@ def test_predict_missing_customer_id():
 def test_ready_endpoint():
     """Test readiness endpoint"""
     response = client.get("/ready")
-    health_response = client.get("/health")
     
-    if health_response.json().get("model_loaded", False):
+    if MODEL_LOADED:
         assert response.status_code == 200
         assert response.json()["status"] == "ready"
     else:
