@@ -33,7 +33,6 @@ def calculate_features(credit_score, age, tenure, balance, num_products,
                        has_cr_card, is_active_member, estimated_salary, gender):
     """
     Calculate all 12 features from raw data
-    Согласовано с prepare_data() функцией
     """
     return [
         float(credit_score),                    # CreditScore
@@ -58,8 +57,6 @@ async def lifespan(app: FastAPI):
     
     paths = [
         'models/model.pkl',
-        'api/models/model.pkl',
-        'model.pkl'
     ]
     
     for path in paths:
