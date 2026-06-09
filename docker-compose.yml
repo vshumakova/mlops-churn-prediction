@@ -4,7 +4,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./api/models:/app/models
+      - ./models:/app/models
     environment:
       - MODEL_PATH=/app/models/model.pkl
     healthcheck:
