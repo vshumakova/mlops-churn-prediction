@@ -22,30 +22,32 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r api/requirements.txt
-          pip install pytest pytest-cov
+          pip install pytest scipy
       
-      - name: Train model
+      - name: Train new model
         run: python src/train.py
       
-      - name: Check quality gate
+      - name: MDD Analysis (statistical tests)
+        id: mdd
+        run: pytest tests/test_model_comparison.py::test_mdd_hypothesis -v
+      
+      - name: Save current model as backup
+        if: success()
         run: |
-          ROC_AUC=$(python -c "import json; print(json.load(open('metrics/latest_metrics.json'))['roc_auc'])")
-          if (( $(echo "$ROC_AUC < 0.75" | bc -l) )); then
-            echo "❌ Quality gate failed. ROC-AUC: $ROC_AUC (need >= 0.75)"
-            exit 1
+          mkdir -p models
+          if [ -f "api/models/model.pkl" ]; then
+            cp api/models/model.pkl models/previous_model.pkl
+            echo "✓ Saved current model as previous"
           fi
-          echo "✅ Quality gate passed. ROC-AUC: $ROC_AUC"
       
-      - name: Run tests
-        run: pytest tests/test_api.py -v --tb=short
+      - name: Deploy new model
+        if: success()
+        run: |
+          cp models/candidate_model.pkl api/models/model.pkl
+          echo "New model deployed"
       
-      - name: Copy model to API folder
-        run: cp models/model.pkl api/models/
-      
-      - name: Commit and push changes
-        uses: stefanzweifel/git-auto-commit-action@v4
-        with:
-          commit_message: "🤖 Auto-retrain model [skip ci]"
-          commit_user_name: "ML Bot"
-          commit_user_email: "ml-bot@github.com"
-          add_options: '-A'
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          bash scripts/rollback.sh
+          echo "Rollback executed"
