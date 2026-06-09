@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
 import numpy as np
@@ -80,6 +81,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+app.add_middleware(HTTPSRedirectMiddleware)
 
 @app.get("/health")
 async def health_check():
