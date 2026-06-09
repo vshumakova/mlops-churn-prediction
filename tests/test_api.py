@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Импортируем функцию из API
 from api.main import app, calculate_features
 
 # Model loading
@@ -24,7 +23,7 @@ MODEL_LOADED = load_model_for_tests()
 client = TestClient(app)
 
 
-# Helper - просто обертка вокруг API функции
+# Helper
 def features(credit_score=720, age=32, tenure=5, balance=50000,
              num_products=2, has_cr_card=1, is_active_member=1,
              estimated_salary=120000, gender=0):
