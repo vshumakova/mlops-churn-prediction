@@ -59,13 +59,13 @@ def load_and_preprocess_test_data():
                 print(f"Error preprocessing row {idx}: {e}")
                 continue
             
-            X = np.array(features_list)
-            y = df['Exited'].values[:len(X)]
+        X = np.array(features_list)
+        y = df['Exited'].values[:len(X)]
                 
-            print(f"Preprocessed {len(X)} samples, {X.shape[1]} features")
-            print(f"Target distribution: {y.mean():.2%} churn")
+        print(f"Preprocessed {len(X)} samples, {X.shape[1]} features")
+        print(f"Target distribution: {y.mean():.2%} churn")
                 
-            return X, y
+        return X, y
     
     # Generate synthetic data if no file exists
     print("\nNo test data found, generating synthetic data")
@@ -152,7 +152,7 @@ def test_mdd_hypothesis():
     print(f"Target distribution: {y.mean():.2%} churn")
     
     # Load models
-    current_model = load_model('api/models/model.pkl')
+    current_model = load_model('models/model.pkl')
     candidate_model = load_model('models/candidate_model.pkl')
     
     if candidate_model is None:
