@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Churn Prediction</title>
+    <style>
+        body { font-family: Arial; max-width: 600px; margin: 50px auto; padding: 20px; }
+        input, select { width: 100%; padding: 8px; margin: 5px 0 15px; }
+        button { background: #007bff; color: white; padding: 10px 20px; border: none; cursor: pointer; }
+        .result { margin-top: 20px; padding: 15px; border-radius: 5px; }
+        .high-risk { background: #ffebee; border-left: 4px solid #f44336; }
+        .low-risk { background: #e8f5e9; border-left: 4px solid #4caf50; }
+        .medium-risk { background: #fff3e0; border-left: 4px solid #ff9800; }
+    </style>
+</head>
+<body>
+    <h1>🔮 Churn Prediction</h1>
+    <form id="predictionForm">
+        <label>Credit Score (300-850):</label>
+        <input type="number" id="credit_score" value="650" min="300" max="850">
+        
+        <label>Age:</label>
+        <input type="number" id="age" value="35" min="18" max="100">
+        
+        <label>Tenure (years with bank):</label>
+        <input type="number" id="tenure" value="3" min="0" max="10">
+        
+        <label>Balance ($):</label>
+        <input type="number" id="balance" value="50000">
+        
+        <label>Number of Products:</label>
+        <input type="number" id="num_products" value="2" min="1" max="4">
+        
+        <label>Has Credit Card:</label>
+        <select id="has_cr_card">
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+        </select>
+        
+        <label>Is Active Member:</label>
+        <select id="is_active_member">
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+        </select>
+        
+        <label>Estimated Salary ($):</label>
+        <input type="number" id="estimated_salary" value="80000">
+        
+        <label>Gender:</label>
+        <select id="gender">
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+        </select>
+        
+        <button type="submit">Predict</button>
+    </form>
+    
+    <div id="result" style="display:none;"></div>
+
+    <script>
+        document.getElementById('predictionForm').onsubmit = async (e) => {
+            e.preventDefault();
+            
+            const data = {
+                credit_score: parseInt(document.getElementById('credit_score').value),
+                age: parseInt(document.getElementById('age').value),
+                tenure: parseInt(document.getElementById('tenure').value),
+                balance: parseFloat(document.getElementById('balance').value),
+                num_products: parseInt(document.getElementById('num_products').value),
+                has_cr_card: document.getElementById('has_cr_card').value === 'true',
+                is_active_member: document.getElementById('is_active_member').value === 'true',
+                estimated_salary: parseFloat(document.getElementById('estimated_salary').value),
+                gender: document.getElementById('gender').value
+            };
+            
+            const response = await fetch('/predict/v2', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = `result ${result.risk_level.toLowerCase()}-risk`;
+            
+            resultDiv.innerHTML = `
+                <h3>Prediction Result</h3>
+                <p><strong>Risk Level:</strong> ${result.risk_level}</p>
+                <p><strong>Churn Probability:</strong> ${result.churn_risk_percent}</p>
+                <p><strong>Prediction:</strong> ${result.prediction}</p>
+                <p><strong>Recommendation:</strong> ${result.recommendation}</p>
+                ${result.factors ? `<p><strong>Risk Factors:</strong> ${result.factors.join(', ')}</p>` : ''}
+                <small>Model: ${result.model_version}</small>
+            `;
+        };
+    </script>
+</body>
+</html>
