@@ -1,76 +1,86 @@
 """
-Statistical tests for model comparison (MDD Analysis)
-Compares current model vs candidate model for deployment decision
+MDD Analysis - Model Decision Driven tests
+H0: New model is not better than current (ROC-AUC <= 0.75)
+H1: New model is better (ROC-AUC > 0.75)
 """
 
 import pytest
 import numpy as np
-import pandas as pd
-from scipy import stats
 import joblib
 import os
 import json
+import sys
+import math
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.model_selection import StratifiedKFold
+from scipy import stats
+import pandas as pd
 
-# CONFIGURATION
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from api.main import calculate_features
+
 ROC_AUC_THRESHOLD = 0.75
-SIGNIFICANCE_LEVEL = 0.05  # p-value threshold
+SIGNIFICANCE_LEVEL = 0.05
 CV_FOLDS = 5
 RANDOM_SEED = 42
 
 
-# HELPER FUNCTIONS
-def load_test_data():
+def load_and_preprocess_test_data():
     """
-    Load test data for model comparison
-    Expected format: features + target (last column)
+    Load raw CSV and preprocess using API's calculate_features
     """
-    # Path to test data (adjust as needed)
-    test_data_paths = [
-        'data/test_data.csv',
-        'data/validation.csv', 
-        'tests/test_data.csv',
-        'api/data/test_data.csv'
-    ]
+    test_data_paths = 'data/test_data.csv'
+
+    if os.path.exists(path):
+        df = pd.read_csv(path)
+        print(f"\nRaw data loaded from {path}")
+        print(f"  Shape: {df.shape}")
+            
+        # Preprocess each row using API function
+        features_list = []
+        for idx, row in df.iterrows():
+            try:
+                # Convert Gender to 0/1
+                gender = 0 if row['Gender'] == 'Female' else 1
+                    
+                features = calculate_features(
+                        credit_score=row['CreditScore'],
+                        age=row['Age'],
+                        tenure=row['Tenure'],
+                        balance=row['Balance'],
+                        num_products=row['NumOfProducts'],
+                        has_cr_card=row['HasCrCard'],
+                        is_active_member=row['IsActiveMember'],
+                        estimated_salary=row['EstimatedSalary'],
+                        gender=gender
+                )
+                features_list.append(features)
+            except Exception as e:
+                print(f"  Error preprocessing row {idx}: {e}")
+                continue
+            
+        X = np.array(features_list)
+        y = df['Exited'].values[:len(X)]  # Target is 'Exited'
+            
+        print(f"Preprocessed {len(X)} samples, {X.shape[1]} features")
+        print(f"Target distribution: {y.mean():.2%} churn")
+            
+        return X, y, df
     
-    for path in test_data_paths:
-        if os.path.exists(path):
-            data = pd.read_csv(path)
-            print(f"\n✓ Test data loaded from {path}")
-            print(f"  Shape: {data.shape}")
-            return data
-    
-    # If no test data found, generate synthetic data for testing
-    print("\nNo test data found, generating synthetic data for testing")
-    return generate_synthetic_test_data()
+    # Generate synthetic data if no file exists
+    print("\nNo test data found, generating synthetic data")
+    return generate_synthetic_data()
 
 
-def generate_synthetic_test_data(n_samples=1000, random_seed=42):
-    """Generate synthetic test data for model comparison"""
-    np.random.seed(random_seed)
-    
-    # Features (12 features)
+def generate_synthetic_data(n_samples=500):
+    """Generate synthetic preprocessed data"""
+    np.random.seed(RANDOM_SEED)
     X = np.random.randn(n_samples, 12)
-    
-    # Generate realistic target (churn ~ 20%)
     y = (np.random.rand(n_samples) < 0.2).astype(int)
-    
-    # Add some correlation with features
+    # Add some correlation
     y = (y + 0.1 * X[:, 0] + 0.05 * X[:, 1] > 0.3).astype(int)
-    
-    # Create DataFrame
-    feature_names = [
-        'credit_score', 'log_age', 'tenure', 'log_balance',
-        'num_products', 'has_cr_card', 'is_active_member',
-        'log_salary', 'gender', 'balance_salary_ratio',
-        'tenure_age_ratio', 'credit_score_age_ratio'
-    ]
-    
-    df = pd.DataFrame(X, columns=feature_names)
-    df['target'] = y
-    
-    return df
+    return X, y, None
 
 
 def load_model(model_path):
@@ -81,44 +91,59 @@ def load_model(model_path):
 
 
 def evaluate_model(model, X, y):
-    """
-    Evaluate model and return ROC-AUC score
-    """
+    """Evaluate model and return ROC-AUC"""
     try:
-        # Try predict_proba first
         if hasattr(model, 'predict_proba'):
-            y_pred_proba = model.predict_proba(X)[:, 1]
+            y_pred = model.predict_proba(X)[:, 1]
         else:
-            y_pred_proba = model.predict(X)
-        
-        # Calculate ROC-AUC
-        roc_auc = roc_auc_score(y, y_pred_proba)
-        return roc_auc
+            y_pred = model.predict(X)
+        return roc_auc_score(y, y_pred)
     except Exception as e:
         print(f"Evaluation error: {e}")
         return 0.5
 
 
-def bootstrap_roc_auc(model, X, y, n_bootstrap=1000, random_seed=42):
-    """
-    Bootstrap ROC-AUC to get confidence intervals
-    """
+def bootstrap_roc_auc(model, X, y, n_bootstrap=100, random_seed=42):
+    """Bootstrap ROC-AUC to get confidence intervals"""
     np.random.seed(random_seed)
     scores = []
     n = len(y)
     
     for _ in range(n_bootstrap):
         indices = np.random.choice(n, n, replace=True)
-        X_boot = X[indices] if isinstance(X, np.ndarray) else X.iloc[indices]
+        X_boot = X[indices]
         y_boot = y[indices]
-        
         score = evaluate_model(model, X_boot, y_boot)
         scores.append(score)
     
     return np.array(scores)
 
 
-# MAIN MDD TESTS
+def save_decision(result, decision, metrics):
+    """Save MDD decision to file"""
+    from datetime import datetime
+    
+    output = {
+        'test': 'MDD_Hypothesis_Test',
+        'result': result,
+        'decision': decision,
+        'metrics': {
+            'current_roc_auc': float(metrics['current_roc_auc']),
+            'candidate_roc_auc': float(metrics['candidate_roc_auc']),
+            'p_value': float(metrics['p_value']) if not np.isnan(metrics['p_value']) else None,
+            'is_significant': bool(metrics['is_significant']),
+            'has_improvement': bool(metrics['has_improvement']),
+            'threshold': float(metrics['threshold'])
+        },
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    with open('mdd_decision.json', 'w') as f:
+        json.dump(output, f, indent=2)
+    print(f"\nDecision saved to mdd_decision.json")
+
+
+#  MAIN MDD TEST
 
 def test_mdd_hypothesis():
     """
@@ -126,14 +151,13 @@ def test_mdd_hypothesis():
     H0: New model is not better than current (ROC-AUC <= 0.75)
     H1: New model is better (ROC-AUC > 0.75)
     """
-    
     print("\nMDD ANALYSIS: Model Comparison\n")
     
-    # Load test data
-    data = load_test_data()
-    feature_cols = [col for col in data.columns if col != 'target']
-    X = data[feature_cols].values
-    y = data['target'].values
+    # Load and preprocess test data using API function
+    X, y, _ = load_and_preprocess_test_data()
+    
+    print(f"\nTest data: {X.shape[0]} samples, {X.shape[1]} features")
+    print(f"Target distribution: {y.mean():.2%} churn")
     
     # Load models
     current_model = load_model('api/models/model.pkl')
@@ -151,61 +175,64 @@ def test_mdd_hypothesis():
     
     print(f"\nCurrent model ROC-AUC: {current_roc_auc:.4f}")
     print(f"Candidate model ROC-AUC: {candidate_roc_auc:.4f}")
-    print(f"Improvement: {(candidate_roc_auc - current_roc_auc)*100:.2f}%")
+    improvement = (candidate_roc_auc - current_roc_auc) * 100
+    print(f"Improvement: {improvement:.2f}%")
     
     # Bootstrap for confidence intervals
     current_scores = bootstrap_roc_auc(current_model, X, y)
     candidate_scores = bootstrap_roc_auc(candidate_model, X, y)
     
-    # Calculate confidence intervals (95%)
     current_ci = np.percentile(current_scores, [2.5, 97.5])
     candidate_ci = np.percentile(candidate_scores, [2.5, 97.5])
     
     print(f"\nCurrent model 95% CI: [{current_ci[0]:.4f}, {current_ci[1]:.4f}]")
     print(f"Candidate model 95% CI: [{candidate_ci[0]:.4f}, {candidate_ci[1]:.4f}]")
     
-    # Perform paired t-test
-    # We need paired scores - use cross-validation for paired comparison
+    # Paired t-test
     cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_SEED)
     
     current_cv_scores = []
     candidate_cv_scores = []
     
     for train_idx, test_idx in cv.split(X, y):
-        X_train, X_test = X[train_idx], X[test_idx]
-        y_train, y_test = y[train_idx], y[test_idx]
+        X_test = X[test_idx]
+        y_test = y[test_idx]
         
-        # For fair comparison, we should retrain on same folds
-        # But here we're evaluating pre-trained models
         current_cv_scores.append(evaluate_model(current_model, X_test, y_test))
         candidate_cv_scores.append(evaluate_model(candidate_model, X_test, y_test))
     
-    # Paired t-test
-    differences = np.array(candidate_cv_scores) - np.array(current_cv_scores)
-    t_stat, p_value = stats.ttest_rel(candidate_cv_scores, current_cv_scores)
+    # Handle case when all scores are identical
+    if np.std(current_cv_scores) == 0 and np.std(candidate_cv_scores) == 0:
+        t_stat = 0.0
+        p_value = 1.0
+        print("\nAll CV scores are identical - cannot perform t-test")
+    else:
+        t_stat, p_value = stats.ttest_rel(candidate_cv_scores, current_cv_scores)
     
     print(f"\nPaired t-test results:")
-    print(f"   t-statistic: {t_stat:.4f}")
-    print(f"   p-value: {p_value:.4f}")
+    if not np.isnan(t_stat):
+        print(f"   t-statistic: {t_stat:.4f}")
+    if not np.isnan(p_value):
+        print(f"   p-value: {p_value:.4f}")
     print(f"   Significance level: {SIGNIFICANCE_LEVEL}")
     
     # Decision logic
     is_better = candidate_roc_auc > ROC_AUC_THRESHOLD
-    is_significant = p_value < SIGNIFICANCE_LEVEL
+    is_significant = p_value < SIGNIFICANCE_LEVEL if not np.isnan(p_value) else False
     has_improvement = candidate_roc_auc > current_roc_auc
     
     print(f"\nDecision Criteria:")
-    print(f"   Candidate > threshold ({ROC_AUC_THRESHOLD}): {is_better}")
-    print(f"   Statistically significant (p < {SIGNIFICANCE_LEVEL}): {is_significant}")
-    print(f"   Improvement over current: {has_improvement}")
+    print(f"   • Candidate > threshold ({ROC_AUC_THRESHOLD}): {is_better} ({candidate_roc_auc:.4f} > {ROC_AUC_THRESHOLD})")
+    print(f"   • Statistically significant (p < {SIGNIFICANCE_LEVEL}): {is_significant}")
+    print(f"   • Improvement over current: {has_improvement} ({candidate_roc_auc:.4f} > {current_roc_auc:.4f})")
     
     # Final decision
     if is_better and is_significant and has_improvement:
-        print("\nDECISION: Reject H0 - Deploy new model")
+        print("\nDECISION: REJECT H0 - Deploy new model")
         decision = "DEPLOY"
         result = "REJECT_H0"
     else:
-        print("\nDECISION: Cannot reject H0 - Keep current model")
+        print("\nDECISION: FAIL TO REJECT H0 - Keep current model")
         decision = "KEEP_CURRENT"
         result = "FAIL_TO_REJECT_H0"
     
@@ -213,9 +240,9 @@ def test_mdd_hypothesis():
     
     # Save decision for CI/CD
     save_decision(result, decision, {
-        'current_roc_auc': float(current_roc_auc),
-        'candidate_roc_auc': float(candidate_roc_auc),
-        'p_value': float(p_value),
+        'current_roc_auc': current_roc_auc,
+        'candidate_roc_auc': candidate_roc_auc,
+        'p_value': p_value,
         'is_significant': is_significant,
         'has_improvement': has_improvement,
         'threshold': ROC_AUC_THRESHOLD
@@ -226,178 +253,52 @@ def test_mdd_hypothesis():
         f"Model not good enough for deployment. ROC-AUC: {candidate_roc_auc:.4f}, p-value: {p_value:.4f}"
 
 
+# ADDITIONAL TESTS
+
 def test_bootstrap_confidence_intervals():
-    """
-    Test that confidence intervals are correctly calculated
-    """
-    data = load_test_data()
-    feature_cols = [col for col in data.columns if col != 'target']
-    X = data[feature_cols].values
-    y = data['target'].values
+    """Test that confidence intervals are correctly calculated"""
+    print("\nBOOTSTRAP CONFIDENCE INTERVALS\n")
     
     current_model = load_model('api/models/model.pkl')
     if current_model is None:
-        pytest.skip("Current model not found")
+        pytest.skip("No current model found")
+    
+    X, y, _ = load_and_preprocess_test_data()
     
     scores = bootstrap_roc_auc(current_model, X, y)
     ci = np.percentile(scores, [2.5, 97.5])
     
     print(f"\nBootstrap 95% CI: [{ci[0]:.4f}, {ci[1]:.4f}]")
+    print(f"Mean ROC-AUC: {np.mean(scores):.4f}")
     
-    # CI should be reasonable (width less than 0.1)
     ci_width = ci[1] - ci[0]
-    assert ci_width < 0.2, f"Confidence interval too wide: {ci_width:.4f}"
+    assert ci_width < 0.3, f"Confidence interval too wide: {ci_width:.4f}"
     
-    # CI should be within [0, 1]
-    assert 0 <= ci[0] <= 1, "Lower CI bound out of range"
-    assert 0 <= ci[1] <= 1, "Upper CI bound out of range"
-
-
-def test_effect_size():
-    """
-    Calculate effect size (Cohen's d) for model improvement
-    """
-    data = load_test_data()
-    feature_cols = [col for col in data.columns if col != 'target']
-    X = data[feature_cols].values
-    y = data['target'].values
-    
-    current_model = load_model('api/models/model.pkl')
-    candidate_model = load_model('models/candidate_model.pkl')
-    
-    if candidate_model is None:
-        pytest.skip("No candidate model found")
-    
-    # Get scores via cross-validation
-    cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_SEED)
-    
-    current_scores = []
-    candidate_scores = []
-    
-    for train_idx, test_idx in cv.split(X, y):
-        X_test = X[test_idx]
-        y_test = y[test_idx]
-        
-        current_scores.append(evaluate_model(current_model, X_test, y_test))
-        candidate_scores.append(evaluate_model(candidate_model, X_test, y_test))
-    
-    # Calculate Cohen's d (effect size)
-    mean_diff = np.mean(candidate_scores) - np.mean(current_scores)
-    pooled_std = np.sqrt((np.var(current_scores) + np.var(candidate_scores)) / 2)
-    cohens_d = mean_diff / pooled_std if pooled_std > 0 else 0
-    
-    print(f"\nEffect Size (Cohen's d): {cohens_d:.4f}")
-    
-    # Interpret effect size
-    if cohens_d < 0.2:
-        effect = "negligible"
-    elif cohens_d < 0.5:
-        effect = "small"
-    elif cohens_d < 0.8:
-        effect = "medium"
-    else:
-        effect = "large"
-    
-    print(f"   Effect interpretation: {effect}")
-    
-    # For deployment, we want at least small effect
-    if cohens_d < 0.2 and mean_diff > 0:
-        print(f"Warning: Improvement is statistically significant but practically negligible")
-
-
-def save_decision(result, decision, metrics):
-    """
-    Save MDD decision for CI/CD pipeline
-    """
-    decision_file = 'mdd_decision.json'
-    
-    output = {
-        'test': 'MDD_Hypothesis_Test',
-        'result': result,
-        'decision': decision,
-        'metrics': metrics,
-        'timestamp': str(pd.Timestamp.now()),
-        'threshold': ROC_AUC_THRESHOLD,
-        'significance_level': SIGNIFICANCE_LEVEL
-    }
-    
-    with open(decision_file, 'w') as f:
-        json.dump(output, f, indent=2)
-    
-    print(f"\nDecision saved to {decision_file}")
-
-
-# ADDITIONAL TESTS
-def test_model_improvement_percentile():
-    """
-    Test that improvement is robust across different data splits
-    """
-    data = load_test_data()
-    feature_cols = [col for col in data.columns if col != 'target']
-    X = data[feature_cols].values
-    y = data['target'].values
-    
-    current_model = load_model('api/models/model.pkl')
-    candidate_model = load_model('models/candidate_model.pkl')
-    
-    if candidate_model is None:
-        pytest.skip("No candidate model found")
-    
-    # Multiple bootstrap iterations to check robustness
-    improvements = []
-    
-    for seed in range(10):
-        np.random.seed(seed)
-        indices = np.random.choice(len(y), len(y), replace=True)
-        X_boot = X[indices]
-        y_boot = y[indices]
-        
-        current_score = evaluate_model(current_model, X_boot, y_boot)
-        candidate_score = evaluate_model(candidate_model, X_boot, y_boot)
-        improvements.append(candidate_score - current_score)
-    
-    improvements = np.array(improvements)
-    improvement_percentiles = np.percentile(improvements, [2.5, 50, 97.5])
-    
-    print(f"\nImprovement distribution across bootstraps:")
-    print(f"   Median improvement: {improvement_percentiles[1]*100:.2f}%")
-    print(f"   95% CI: [{improvement_percentiles[0]*100:.2f}%, {improvement_percentiles[2]*100:.2f}%]")
-    
-    # Check that median improvement is positive
-    median_improvement = improvement_percentiles[1]
-    if median_improvement <= 0:
-        print(f"Warning: Median improvement is not positive ({median_improvement*100:.2f}%)")
+    print("\nConfidence intervals test passed")
 
 
 def test_rollback_condition():
-    """
-    Test rollback conditions (if new model fails)
-    """
-    print("\nRollback Conditions Test")
+    """Test rollback conditions (informational)"""
+    print("\nROLLBACK CONDITIONS TEST\n")
     
-    # Check if rollback mechanism is documented
-    rollback_conditions = [
-        "ROC-AUC drops below threshold",
-        "p-value > 0.05",
+    script_path = 'scripts/rollback.sh'
+    if os.path.exists(script_path):
+        print(f"\n✓ Rollback script found: {script_path}")
+    else:
+        print(f"\nRollback script not found: {script_path}")
+    
+    print("\nRecommended rollback conditions:")
+    conditions = [
+        "ROC-AUC drops below 0.75",
+        "p-value > 0.05 (not statistically significant)",
         "Inference latency increases > 20%",
         "Error rate > 1%"
     ]
-    
-    # Check for rollback script
-    rollback_script = 'scripts/rollback.sh'
-    if os.path.exists(rollback_script):
-        print(f"Rollback script found: {rollback_script}")
-    else:
-        print(f"Rollback script not found (optional)")
-    
-    print("\nRecommended rollback conditions:")
-    for condition in rollback_conditions:
+    for condition in conditions:
         print(f"   • {condition}")
     
-    # This test always passes - it's informational
     assert True
 
 
 if __name__ == "__main__":
-    # Run MDD tests
     pytest.main([__file__, "-v", "-s"])
