@@ -61,7 +61,6 @@ async def lifespan(app: FastAPI):
         try:
             model = joblib.load(path)
             logger.info(f"Model loaded from {path}")
-        break
         except Exception as e:
             logger.error(f"Failed to load from {path}: {e}")
     
