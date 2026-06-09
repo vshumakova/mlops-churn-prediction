@@ -55,18 +55,15 @@ async def lifespan(app: FastAPI):
     global model
     logger.info("Starting up...")
     
-    paths = [
-        'models/model.pkl',
-    ]
+    path = 'models/model.pkl'
     
-    for path in paths:
-        if os.path.exists(path):
-            try:
-                model = joblib.load(path)
-                logger.info(f"Model loaded from {path}")
-                break
-            except Exception as e:
-                logger.error(f"Failed to load from {path}: {e}")
+    if os.path.exists(path):
+        try:
+            model = joblib.load(path)
+            logger.info(f"Model loaded from {path}")
+            break
+        except Exception as e:
+            logger.error(f"Failed to load from {path}: {e}")
     
     if model is None:
         logger.warning("Model not found in any location")
