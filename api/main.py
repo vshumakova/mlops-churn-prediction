@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
 import numpy as np
@@ -158,3 +160,12 @@ async def root():
         "health": "/health",
         "predict": "/predict"
     }
+
+# statistic monitoring
+if os.path.exists('api/static'):
+    app.mount("/static", StaticFiles(directory="api/static"), name="static")
+
+@app.get("/ui", response_class=HTMLResponse)
+async def web_interface():
+    with open('api/static/index.html', 'r') as f:
+        return HTMLResponse(content=f.read())
