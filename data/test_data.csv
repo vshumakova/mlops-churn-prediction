@@ -1,9 +1,0 @@
-import pandas as pd
-import numpy as np
-np.random.seed(42)
-X = np.random.randn(200, 12)
-y = (np.random.rand(200) < 0.2).astype(int)
-df = pd.DataFrame(X, columns=[f'f{i}' for i in range(12)])
-df['target'] = y
-df.to_csv('data/test_data.csv', index=False)
-print('Created test_data.csv')
