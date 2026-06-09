@@ -5,19 +5,24 @@ __pycache__/
 venv/
 .venv/
 
-# ML модели и данные
-*.pkl
-*.joblib
-*.csv
-*.parquet
-
 # IDE
 .vscode/
 .idea/
 .DS_Store
 
-# Логи
+# Logs
+logs/
 *.log
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Model files
+*.pkl
+*.joblib
+models/
+api/models/model.pkl
+models/previous_model.pkl
+
+# MDD decision files
+mdd_decision.json
