@@ -5,13 +5,13 @@ import numpy as np
 import joblib
 import os
 import logging
+import math
 from typing import List
 from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Глобальная переменная для модели
 model = None
 model_version = "1.0.0"
 
@@ -28,9 +28,31 @@ class PredictionResponse(BaseModel):
     model_version: str
     timestamp: str
 
+
+def calculate_features(credit_score, age, tenure, balance, num_products,
+                       has_cr_card, is_active_member, estimated_salary, gender):
+    """
+    Calculate all 12 features from raw data
+    Согласовано с prepare_data() функцией
+    """
+    return [
+        float(credit_score),                    # CreditScore
+        float(math.log1p(age)),                 # Age_log
+        float(tenure),                          # Tenure
+        float(math.log1p(max(balance, 0))),     # Balance_log
+        float(num_products),                    # NumOfProducts
+        float(has_cr_card),                     # HasCrCard
+        float(is_active_member),                # IsActiveMember
+        float(math.log1p(estimated_salary)),    # Salary_log
+        float(gender),                          # Gender (0=Male, 1=Female)
+        float(balance / (estimated_salary + 1)), # BalanceSalaryRatio
+        float(tenure / (age + 1)),              # TenureByAge
+        float(credit_score / (age + 1))         # CreditScoreGivenAge
+    ]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: загружаем модель
     global model
     logger.info("Starting up...")
     
@@ -54,16 +76,15 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Shutdown: очищаем ресурсы
     logger.info("Shutting down...")
     model = None
 
-# Создаем приложение с lifespan
 app = FastAPI(
     title="Churn Prediction API",
     version="1.0.0",
     lifespan=lifespan
 )
+
 
 @app.get("/health")
 async def health_check():
@@ -75,18 +96,19 @@ async def health_check():
         "timestamp": datetime.now().isoformat()
     }
 
+
 @app.get("/ready")
 async def readiness_check():
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     return {"status": "ready"}
 
+
 @app.post("/predict")
 async def predict(request: PredictionRequest):
     if model is None:
         raise HTTPException(status_code=503, detail="Model not available")
     
-    # Проверка количества признаков
     if len(request.features) != 12:
         raise HTTPException(
             status_code=400, 
@@ -124,6 +146,7 @@ async def predict(request: PredictionRequest):
         logger.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/metrics")
 async def get_metrics():
     return {
@@ -132,6 +155,7 @@ async def get_metrics():
         "endpoints": ["/health", "/ready", "/predict", "/metrics"],
         "features_count": 12
     }
+
 
 @app.get("/")
 async def root():
