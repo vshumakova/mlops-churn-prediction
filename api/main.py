@@ -1,6 +1,4 @@
-from api.database import get_db, save_prediction, init_db
-from sqlalchemy.orm import Session
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -12,6 +10,9 @@ import logging
 import math
 from typing import List
 from datetime import datetime
+from sqlalchemy.orm import Session
+
+from api.database import get_db, save_prediction, init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
