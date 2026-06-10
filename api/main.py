@@ -58,20 +58,17 @@ async def lifespan(app: FastAPI):
     global model
     logger.info("Starting up...")
     
-    path = 'models/model.pkl'
+    init_db()
     
+    path = 'models/model.pkl'
     if os.path.exists(path):
         try:
             model = joblib.load(path)
             logger.info(f"Model loaded from {path}")
         except Exception as e:
-            logger.error(f"Failed to load from {path}: {e}")
-    
-    if model is None:
-        logger.warning("Model not found in any location")
+            logger.error(f"Failed to load: {e}")
     
     yield
-    
     logger.info("Shutting down...")
     model = None
 
@@ -93,7 +90,7 @@ class CustomerData(BaseModel):
     gender: str
 
 @app.post("/predict/v2")
-async def predict_v2(customer: CustomerData):
+async def predict_v2(customer: CustomerData, db: Session = Depends(get_db)):
     """Predict churn with readable JSON instead of array"""
     if model is None:
         raise HTTPException(status_code=503, detail="Model not available")
@@ -131,6 +128,20 @@ async def predict_v2(customer: CustomerData):
     else:
         risk_level = "Critical"
         recommendation = "Urgent: Manager call + premium retention offer"
+    
+    try:
+        customer_id = f"{customer.gender}_{customer.age}"
+        
+        save_prediction(db, customer_id, {
+            'churn_probability': probability,
+            'prediction': prediction,
+            'risk_level': risk_level,
+            'recommendation': recommendation,
+            'model_version': model_version
+        })
+        logger.info(f"Prediction saved to DB for customer {customer_id}")
+    except Exception as db_error:
+        logger.warning(f"Failed to save to DB: {db_error}")
     
     return {
         "churn_probability": round(probability, 4),
@@ -170,15 +181,12 @@ async def readiness_check():
 
 
 @app.post("/predict")
-async def predict(request: PredictionRequest):
+async def predict(request: PredictionRequest, db: Session = Depends(get_db)):
     if model is None:
         raise HTTPException(status_code=503, detail="Model not available")
     
     if len(request.features) != 12:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Expected 12 features, got {len(request.features)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Expected 12 features, got {len(request.features)}")
     
     try:
         features = np.array(request.features).reshape(1, -1)
@@ -198,7 +206,7 @@ async def predict(request: PredictionRequest):
             risk_level = "Critical"
             recommendation = "Urgent: Manager call + premium retention offer"
         
-        return PredictionResponse(
+        response = PredictionResponse(
             customer_id=request.customer_id,
             churn_probability=probability,
             prediction=prediction,
@@ -207,6 +215,20 @@ async def predict(request: PredictionRequest):
             model_version=model_version,
             timestamp=datetime.now().isoformat()
         )
+        
+        try:
+            save_prediction(db, request.customer_id, {
+                'churn_probability': probability,
+                'prediction': prediction,
+                'risk_level': risk_level,
+                'recommendation': recommendation,
+                'model_version': model_version
+            })
+            logger.info(f"Prediction saved to DB for customer {request.customer_id}")
+        except Exception as db_error:
+            logger.warning(f"Failed to save to DB: {db_error}")
+        
+        return response
     except Exception as e:
         logger.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
