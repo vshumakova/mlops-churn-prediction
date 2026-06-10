@@ -1,3 +1,5 @@
+from api.database import get_db, save_prediction, init_db
+from sqlalchemy.orm import Session
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
