@@ -39,7 +39,7 @@ def get_db():
 
 
 def save_prediction(db, customer_id: str, result: dict):
-    ""Saving prediction to DB"""
+    """Save prediction to DB"""  
     record = Prediction(
         customer_id=customer_id,
         churn_probability=result['churn_probability'],
