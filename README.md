@@ -217,10 +217,10 @@ The API is deployed and available 24/7:
 
 | Resource | URL |
 |----------|-----|
-| Health Check | https://mlops-churn-prediction-2.onrender.com/health |
-| Web UI | https://mlops-churn-prediction-2.onrender.com/ui |
-| API Docs | https://mlops-churn-prediction-2.onrender.com/docs |
-| Root Endpoint | https://mlops-churn-prediction-2.onrender.com/ |
+| Health Check | https://mlops-churn-prediction-web.onrender.com/health |
+| Web UI | https://mlops-churn-prediction-web.onrender.com/ui |
+| API Docs | https://mlops-churn-prediction-web.onrender.com/docs |
+| Root Endpoint | https://mlops-churn-prediction-web.onrender.com/ |
 
 ## Technologies
 
@@ -239,9 +239,9 @@ The API is deployed and available 24/7:
 ## Links
 
 - **GitHub Repository**: https://github.com/vshumakova/mlops-churn-prediction
-- **Live API**: https://mlops-churn-prediction-2.onrender.com
-- **API Documentation**: https://mlops-churn-prediction-2.onrender.com/docs
-- **Web Interface**: https://mlops-churn-prediction-2.onrender.com/ui
+- **Live API**: https://mlops-churn-prediction-web.onrender.com
+- **API Documentation**: https://mlops-churn-prediction-web.onrender.com/docs
+- **Web Interface**: https://mlops-churn-prediction-web.onrender.com/ui
 
 ## License
 
