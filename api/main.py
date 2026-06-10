@@ -21,6 +21,64 @@ class PredictionRequest(BaseModel):
     features: List[float] = Field(..., description="List of 12 feature values")
     customer_id: str = Field(..., description="Customer identifier")
 
+class PredictionResponse(BaseModel):
+    customer_id: str
+    churn_probability: float
+    prediction: int
+    risk_level: str
+    recommendation: str
+    model_version: str
+    timestamp: str
+
+def calculate_features(credit_score, age, tenure, balance, num_products,
+                       has_cr_card, is_active_member, estimated_salary, gender):
+    """
+    Calculate all 12 features from raw data
+    """
+    return [
+        float(credit_score),                    # CreditScore
+        float(math.log1p(age)),                 # Age_log
+        float(tenure),                          # Tenure
+        float(math.log1p(max(balance, 0))),     # Balance_log
+        float(num_products),                    # NumOfProducts
+        float(has_cr_card),                     # HasCrCard
+        float(is_active_member),                # IsActiveMember
+        float(math.log1p(estimated_salary)),    # Salary_log
+        float(gender),                          # Gender (0=Male, 1=Female)
+        float(balance / (estimated_salary + 1)), # BalanceSalaryRatio
+        float(tenure / (age + 1)),              # TenureByAge
+        float(credit_score / (age + 1))         # CreditScoreGivenAge
+    ]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global model
+    logger.info("Starting up...")
+    
+    path = 'models/model.pkl'
+    
+    if os.path.exists(path):
+        try:
+            model = joblib.load(path)
+            logger.info(f"Model loaded from {path}")
+        except Exception as e:
+            logger.error(f"Failed to load from {path}: {e}")
+    
+    if model is None:
+        logger.warning("Model not found in any location")
+    
+    yield
+    
+    logger.info("Shutting down...")
+    model = None
+
+app = FastAPI(
+    title="Churn Prediction API",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
 class CustomerData(BaseModel):
     credit_score: int
     age: int
@@ -81,64 +139,6 @@ async def predict_v2(customer: CustomerData):
         "model_version": model_version,
         "timestamp": datetime.now().isoformat()
     }
-
-class PredictionResponse(BaseModel):
-    customer_id: str
-    churn_probability: float
-    prediction: int
-    risk_level: str
-    recommendation: str
-    model_version: str
-    timestamp: str
-
-def calculate_features(credit_score, age, tenure, balance, num_products,
-                       has_cr_card, is_active_member, estimated_salary, gender):
-    """
-    Calculate all 12 features from raw data
-    """
-    return [
-        float(credit_score),                    # CreditScore
-        float(math.log1p(age)),                 # Age_log
-        float(tenure),                          # Tenure
-        float(math.log1p(max(balance, 0))),     # Balance_log
-        float(num_products),                    # NumOfProducts
-        float(has_cr_card),                     # HasCrCard
-        float(is_active_member),                # IsActiveMember
-        float(math.log1p(estimated_salary)),    # Salary_log
-        float(gender),                          # Gender (0=Male, 1=Female)
-        float(balance / (estimated_salary + 1)), # BalanceSalaryRatio
-        float(tenure / (age + 1)),              # TenureByAge
-        float(credit_score / (age + 1))         # CreditScoreGivenAge
-    ]
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global model
-    logger.info("Starting up...")
-    
-    path = 'models/model.pkl'
-    
-    if os.path.exists(path):
-        try:
-            model = joblib.load(path)
-            logger.info(f"Model loaded from {path}")
-        except Exception as e:
-            logger.error(f"Failed to load from {path}: {e}")
-    
-    if model is None:
-        logger.warning("Model not found in any location")
-    
-    yield
-    
-    logger.info("Shutting down...")
-    model = None
-
-app = FastAPI(
-    title="Churn Prediction API",
-    version="1.0.0",
-    lifespan=lifespan
-)
 
 # statistic monitoring
 if os.path.exists('api/static'):
