@@ -12,7 +12,19 @@ from typing import List
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from api.database import get_db, save_prediction, init_db
+try:
+    from api.database import get_db, save_prediction, init_db
+    DB_AVAILABLE = True
+    print("Database module loaded successfully")
+except ImportError as e:
+    DB_AVAILABLE = False
+    print(f"Database not available: {e}")
+    def get_db():
+        yield None
+    def save_prediction(*args, **kwargs):
+        pass
+    def init_db():
+        pass
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -59,7 +71,12 @@ async def lifespan(app: FastAPI):
     global model
     logger.info("Starting up...")
     
-    init_db()
+    if DB_AVAILABLE:
+        try:
+            init_db()
+            logger.info("Database initialized")
+        except Exception as e:
+            logger.warning(f"Database init failed (continuing without DB): {e}")
     
     path = 'models/model.pkl'
     if os.path.exists(path):
@@ -68,6 +85,8 @@ async def lifespan(app: FastAPI):
             logger.info(f"Model loaded from {path}")
         except Exception as e:
             logger.error(f"Failed to load: {e}")
+    else:
+        logger.warning("Model not found")
     
     yield
     logger.info("Shutting down...")
