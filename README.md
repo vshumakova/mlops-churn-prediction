@@ -243,14 +243,6 @@ The API is deployed and available 24/7:
 - **API Documentation**: https://mlops-churn-prediction-web.onrender.com/docs
 - **Web Interface**: https://mlops-churn-prediction-web.onrender.com/ui
 
-## License
-
-MIT
-
-## Author
-
-**Vladlena Shumakova**
-
 ---
 *Last updated: June 2026*
 ```
